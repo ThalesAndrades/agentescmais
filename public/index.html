@@ -36,9 +36,19 @@
         <a href="https://www.scmaisinovacao.scti.sc.gov.br/conecte-se.php" target="_blank" rel="noopener" class="cta">Conecte-se</a>
       </nav>
 
-      <div class="status-pill" id="statusPill" title="Status da conexão">
-        <span class="status-dot" aria-hidden="true"></span>
-        <span id="statusText">conectando…</span>
+      <div class="header-actions">
+        <button type="button" id="clearBtn" class="ghost-btn" title="Limpar conversa" hidden>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="3 6 5 6 21 6"/>
+            <path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6"/>
+            <path d="M10 11v6M14 11v6"/>
+          </svg>
+          <span>Limpar</span>
+        </button>
+        <div class="status-pill" id="statusPill" title="Status da conexão">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="statusText">conectando…</span>
+        </div>
       </div>
     </div>
     <div class="header-tagline">

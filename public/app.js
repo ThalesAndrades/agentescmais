@@ -21,6 +21,7 @@
   const $typing       = document.getElementById("typingIndicator");
   const $statusPill   = document.getElementById("statusPill");
   const $statusText   = document.getElementById("statusText");
+  const $clearBtn     = document.getElementById("clearBtn");
 
   // Histórico em memória (também persiste enquanto a aba existe)
   let history = loadHistory();
@@ -61,6 +62,22 @@
     if ($welcome) $welcome.remove();
     history.forEach(msg => renderMessage(msg.role, msg.content, false));
     scrollToBottom();
+    if ($clearBtn) $clearBtn.hidden = false;
+  }
+
+  // Botão "Limpar conversa"
+  if ($clearBtn) {
+    $clearBtn.addEventListener("click", () => {
+      if (history.length === 0) return;
+      if (!confirm("Limpar a conversa atual?")) return;
+      history = [];
+      saveHistory();
+      // Remove todas as mensagens, preserva typing indicator
+      $scroll.querySelectorAll(".message").forEach(el => el.remove());
+      $clearBtn.hidden = true;
+      // Recria estado de boas-vindas
+      location.reload();
+    });
   }
 
   // Healthcheck inicial
@@ -91,6 +108,7 @@
     renderMessage("user", text);
     history.push({ role: "user", content: text });
     saveHistory();
+    if ($clearBtn) $clearBtn.hidden = false;
 
     // Limpa input
     $input.value = "";

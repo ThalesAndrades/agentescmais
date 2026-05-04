@@ -36,18 +36,19 @@ function getClient() {
 function pickRelevantUrl(userMessage) {
   const msg = (userMessage || "").toLowerCase();
 
+  // Ordem importa: rotas mais específicas vêm antes das genéricas
   const map = [
     { keywords: ["notícia", "noticia", "novidade", "última", "ultima", "imprensa"], url: `${BASE_URL}/noticias.php` },
     { keywords: ["evento", "agenda", "calendário", "calendario", "ignition", "workshop"], url: `${BASE_URL}/eventos.php` },
     { keywords: ["fomento", "investimento", "edital", "captação", "captacao", "linha de crédito", "credito", "brde"], url: `${BASE_URL}/fomentos.php` },
     { keywords: ["marco legal", "legislação", "legislacao", "lei municipal", "100% marco"], url: `${BASE_URL}/marcolegal.php` },
     { keywords: ["demanda", "demandasc", "necessidade", "oportunidade municipal"], url: `${BASE_URL}/demandasc.php` },
-    { keywords: ["governança", "governanca", "estrutura"], url: `${BASE_URL}/governanca.php` },
-    { keywords: ["ecossistema", "rede", "hub", "incubadora", "startup", "laboratório", "laboratorio", "centro de inovação", "centro de inovacao"], url: `${BASE_URL}/ecossistema.php` },
-    { keywords: ["centro de inovação", "centros de inovação", "rede de centros"], url: `${BASE_URL}/centros.php` },
+    { keywords: ["governança", "governanca", "estrutura de governança"], url: `${BASE_URL}/governanca.php` },
+    { keywords: ["centro de inovação", "centros de inovação", "centro de inovacao", "centros de inovacao", "rede de centros"], url: `${BASE_URL}/centros.php` },
     { keywords: ["escritório", "escritorio", "projeto"], url: `${BASE_URL}/escritorios.php` },
     { keywords: ["contato", "telefone", "fale", "endereço", "endereco"], url: `${BASE_URL}/contato.php` },
     { keywords: ["conecte", "participar", "cadastrar", "cadastro"], url: `${BASE_URL}/conecte-se.php` },
+    { keywords: ["ecossistema", "rede", "hub", "incubadora", "startup", "laboratório", "laboratorio"], url: `${BASE_URL}/ecossistema.php` },
     { keywords: ["sobre", "história", "historia", "equipe", "agente de inovação", "agente de inovacao", "coordenação", "coordenacao", "missão", "missao", "objetivo"], url: `${BASE_URL}/sobre.php` }
   ];
 
@@ -135,10 +136,17 @@ function getCacheStats() {
   };
 }
 
+function clearCache() {
+  const size = cache.size;
+  cache.clear();
+  return size;
+}
+
 module.exports = {
   fetchRelevantContext,
   fetchPage,
   warmCache,
   getCacheStats,
+  clearCache,
   BASE_URL
 };

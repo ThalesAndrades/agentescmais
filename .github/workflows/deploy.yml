@@ -1,4 +1,4 @@
-name: Deploy → agentescmais.pro
+name: Deploy → Hostinger
 
 on:
   push:
@@ -10,6 +10,7 @@ on:
         description: "Pular npm install (deploy rápido)"
         required: false
         default: "false"
+        type: boolean
 
 concurrency:
   group: deploy-production
@@ -17,14 +18,16 @@ concurrency:
 
 jobs:
   validate:
-    name: Validar pipeline (sem secrets)
+    name: Validar pipeline
     runs-on: ubuntu-latest
+    outputs:
+      secrets_ready: ${{ steps.check.outputs.ready }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validar sintaxe YAML do workflow
+      - name: Validar sintaxe YAML
         run: |
-          python3 -c "import yaml, sys; yaml.safe_load(open('.github/workflows/deploy.yml')); print('✔ YAML válido')"
+          python3 -c "import yaml; yaml.safe_load(open('.github/workflows/deploy.yml')); print('✔ YAML válido')"
 
       - name: Validar scripts shell
         run: |
@@ -32,7 +35,12 @@ jobs:
           shellcheck deploy.sh || true
           echo "✔ Scripts revisados"
 
-      - name: Verificar se secrets necessários estão configurados
+      - name: Smoke test do código
+        run: |
+          node -e "require('./src/audit.js'); require('./src/firecrawl.js'); require('./src/knowledge.js'); console.log('✔ Módulos carregam')"
+
+      - name: Verificar secrets
+        id: check
         env:
           HAS_HOST: ${{ secrets.SSH_HOST != '' }}
           HAS_USER: ${{ secrets.SSH_USER != '' }}
@@ -43,24 +51,29 @@ jobs:
           echo "SSH_USER configurado:        $HAS_USER"
           echo "SSH_PRIVATE_KEY configurado: $HAS_KEY"
           echo "SSH_PORT configurado:        $HAS_PORT"
-          if [ "$HAS_HOST" != "true" ] || [ "$HAS_USER" != "true" ] || [ "$HAS_KEY" != "true" ] || [ "$HAS_PORT" != "true" ]; then
-            echo "::warning::Secrets ausentes — o job de deploy será pulado. Configure em Settings → Secrets → Actions."
+          if [ "$HAS_HOST" = "true" ] && [ "$HAS_USER" = "true" ] && [ "$HAS_KEY" = "true" ] && [ "$HAS_PORT" = "true" ]; then
+            echo "ready=true"  >> "$GITHUB_OUTPUT"
+            echo "✔ Secrets OK — deploy seguirá"
           else
-            echo "✔ Todos os secrets configurados"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Secrets ausentes — deploy será pulado. Configure em Settings → Secrets → Actions."
           fi
 
   deploy:
     name: Deploy para Hostinger
     needs: validate
+    if: needs.validate.outputs.secrets_ready == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    if: ${{ secrets.SSH_HOST != '' && secrets.SSH_USER != '' && secrets.SSH_PRIVATE_KEY != '' && secrets.SSH_PORT != '' }}
+    environment:
+      name: production
+      url: https://agentescmais.pro
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
@@ -68,19 +81,27 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           script_stop: true
           command_timeout: 8m
+          envs: GITHUB_SHA,SKIP_INSTALL
           script: |
-            set -e
+            set -euo pipefail
 
-            APP_DIR="$HOME/domains/agentescmais.pro/public_html"
+            APP_DIR="${HOME}/domains/agentescmais.pro/public_html"
+            SKIP_INSTALL="${{ github.event.inputs.skip_install || 'false' }}"
 
-            echo "▸ Entrando em $APP_DIR"
+            echo "▸ Diretório da aplicação: $APP_DIR"
+            mkdir -p "$APP_DIR"
             cd "$APP_DIR"
+
+            if [ ! -d ".git" ]; then
+              echo "▸ Repositório ainda não clonado — clonando..."
+              git clone https://github.com/${{ github.repository }}.git .
+            fi
 
             echo "▸ Sincronizando com origin/main..."
             git fetch origin main
             git reset --hard origin/main
 
-            if [ "${{ github.event.inputs.skip_install }}" != "true" ]; then
+            if [ "$SKIP_INSTALL" != "true" ]; then
               echo "▸ Instalando dependências de produção..."
               npm install --omit=dev --prefer-offline --no-audit --no-fund
             else
@@ -92,17 +113,20 @@ jobs:
             touch tmp/restart.txt
 
             echo "✔ Deploy concluído em $(date '+%Y-%m-%d %H:%M:%S UTC')"
+            echo "  Commit: ${{ github.sha }}"
 
       - name: Healthcheck pós-deploy
         run: |
+          echo "Aguardando 8s para o Passenger reiniciar..."
           sleep 8
           for i in 1 2 3 4 5; do
             if curl -fsS --max-time 10 https://agentescmais.pro/api/health > /tmp/health.json; then
               echo "✔ Site respondendo:"
               cat /tmp/health.json
+              echo ""
               exit 0
             fi
-            echo "Tentativa $i falhou, aguardando..."
+            echo "Tentativa $i falhou, aguardando 5s..."
             sleep 5
           done
-          echo "::warning::Healthcheck não respondeu — verifique os logs no painel da Hostinger"
+          echo "::warning::Healthcheck não respondeu em 30s — verifique os logs no painel da Hostinger"
