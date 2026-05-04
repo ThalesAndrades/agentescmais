@@ -17,6 +17,7 @@ const rateLimit = require("express-rate-limit");
 
 const { chat } = require("./src/claude");
 const firecrawl = require("./src/firecrawl");
+const audit = require("./src/audit");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -52,14 +53,18 @@ app.get("/api/health", (req, res) => {
     timestamp: new Date().toISOString(),
     model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
     firecrawl: firecrawl.getCacheStats(),
-    uptime: process.uptime()
+    uptime: process.uptime(),
+    chats: audit.getStats().totalChats
   });
 });
 
 app.post("/api/chat", chatLimiter, async (req, res) => {
-  try {
-    const { message, history } = req.body || {};
+  const startedAt = Date.now();
+  const ip = req.ip;
+  const sessionId = req.headers["x-session-id"] || null;
+  const { message, history } = req.body || {};
 
+  try {
     if (!message || typeof message !== "string" || !message.trim()) {
       return res.status(400).json({ error: "Mensagem vazia ou inválida." });
     }
@@ -80,16 +85,31 @@ app.post("/api/chat", chatLimiter, async (req, res) => {
     // Conversa com o Claude
     const response = await chat(sanitizedHistory, message.trim(), liveData);
 
+    const latencyMs = Date.now() - startedAt;
+
+    audit.logChat({
+      ip,
+      sessionId,
+      userMessage: message,
+      assistantReply: response.text,
+      latencyMs,
+      model: response.model,
+      usage: response.usage,
+      liveDataUrl: liveData ? liveData.url : null
+    });
+
     res.json({
       reply: response.text,
       meta: {
         model: response.model,
         usedLiveData: !!liveData,
-        liveDataUrl: liveData ? liveData.url : null
+        liveDataUrl: liveData ? liveData.url : null,
+        latencyMs
       }
     });
   } catch (err) {
     console.error("Erro no /api/chat:", err);
+    audit.logError({ ip, sessionId, userMessage: message, error: err });
 
     // Mensagem amigável sem expor stack trace
     const isApiKeyError = err.message && err.message.includes("API_KEY");
@@ -98,6 +118,40 @@ app.post("/api/chat", chatLimiter, async (req, res) => {
         ? "Configuração do servidor incompleta. Avise o administrador."
         : "Tive um problema ao processar sua mensagem. Tente novamente em instantes."
     });
+  }
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// Endpoints de auditoria (protegidos por ADMIN_TOKEN)
+// ────────────────────────────────────────────────────────────────────────────
+
+function requireAdmin(req, res, next) {
+  const token = process.env.ADMIN_TOKEN;
+  if (!token) {
+    return res.status(503).json({ error: "ADMIN_TOKEN não configurado no servidor." });
+  }
+  const provided = req.headers["x-admin-token"] || req.query.token;
+  if (provided !== token) {
+    return res.status(401).json({ error: "Não autorizado." });
+  }
+  next();
+}
+
+app.get("/api/audit/stats", requireAdmin, (req, res) => {
+  res.json(audit.getStats());
+});
+
+app.get("/api/audit/logs", requireAdmin, (req, res) => {
+  res.json({ files: audit.listLogFiles() });
+});
+
+app.get("/api/audit/logs/:file", requireAdmin, (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit, 10) || 200, 1000);
+    const entries = audit.readLogFile(req.params.file, limit);
+    res.json({ file: req.params.file, count: entries.length, entries });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
 });
 

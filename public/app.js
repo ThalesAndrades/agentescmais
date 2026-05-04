@@ -25,6 +25,7 @@
   // Histórico em memória (também persiste enquanto a aba existe)
   let history = loadHistory();
   let isSending = false;
+  const sessionId = ensureSessionId();
 
   // ──────────────────────────────────────────────────────────
   // Inicialização
@@ -125,7 +126,10 @@
   async function sendToAPI(message) {
     const res = await fetch("/api/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-Session-Id": sessionId
+      },
       body: JSON.stringify({
         message,
         // envia só os últimos 20 turnos (sem a mensagem atual)
@@ -153,7 +157,7 @@
 
     const $avatar = document.createElement("div");
     $avatar.className = "message-avatar";
-    $avatar.textContent = role === "user" ? "Você" : "SC+";
+    $avatar.textContent = role === "user" ? "Eu" : "SC+";
 
     const $bubble = document.createElement("div");
     $bubble.className = "message-bubble";
@@ -351,6 +355,20 @@
       return parsed.filter(m => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string");
     } catch {
       return [];
+    }
+  }
+
+  function ensureSessionId() {
+    try {
+      let id = sessionStorage.getItem("sc_mais_inovacao_session");
+      if (!id) {
+        id = (crypto.randomUUID && crypto.randomUUID()) ||
+             (Date.now().toString(36) + Math.random().toString(36).slice(2, 10));
+        sessionStorage.setItem("sc_mais_inovacao_session", id);
+      }
+      return id;
+    } catch {
+      return "anon-" + Date.now();
     }
   }
 })();
