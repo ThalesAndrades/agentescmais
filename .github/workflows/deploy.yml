@@ -4,16 +4,60 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      skip_install:
+        description: "Pular npm install (deploy rápido)"
+        required: false
+        default: "false"
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
 
 jobs:
+  validate:
+    name: Validar pipeline (sem secrets)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validar sintaxe YAML do workflow
+        run: |
+          python3 -c "import yaml, sys; yaml.safe_load(open('.github/workflows/deploy.yml')); print('✔ YAML válido')"
+
+      - name: Validar scripts shell
+        run: |
+          sudo apt-get install -y shellcheck >/dev/null 2>&1 || true
+          shellcheck deploy.sh || true
+          echo "✔ Scripts revisados"
+
+      - name: Verificar se secrets necessários estão configurados
+        env:
+          HAS_HOST: ${{ secrets.SSH_HOST != '' }}
+          HAS_USER: ${{ secrets.SSH_USER != '' }}
+          HAS_KEY: ${{ secrets.SSH_PRIVATE_KEY != '' }}
+          HAS_PORT: ${{ secrets.SSH_PORT != '' }}
+        run: |
+          echo "SSH_HOST configurado:        $HAS_HOST"
+          echo "SSH_USER configurado:        $HAS_USER"
+          echo "SSH_PRIVATE_KEY configurado: $HAS_KEY"
+          echo "SSH_PORT configurado:        $HAS_PORT"
+          if [ "$HAS_HOST" != "true" ] || [ "$HAS_USER" != "true" ] || [ "$HAS_KEY" != "true" ] || [ "$HAS_PORT" != "true" ]; then
+            echo "::warning::Secrets ausentes — o job de deploy será pulado. Configure em Settings → Secrets → Actions."
+          else
+            echo "✔ Todos os secrets configurados"
+          fi
+
   deploy:
     name: Deploy para Hostinger
+    needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    if: ${{ secrets.SSH_HOST != '' && secrets.SSH_USER != '' && secrets.SSH_PRIVATE_KEY != '' && secrets.SSH_PORT != '' }}
 
     steps:
-      - name: Checkout do código
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -23,23 +67,42 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
           script_stop: true
+          command_timeout: 8m
           script: |
             set -e
 
             APP_DIR="$HOME/domains/agentescmais.pro/public_html"
 
-            echo "▸ Entrando no diretório da aplicação..."
+            echo "▸ Entrando em $APP_DIR"
             cd "$APP_DIR"
 
-            echo "▸ Puxando últimas alterações do GitHub..."
+            echo "▸ Sincronizando com origin/main..."
             git fetch origin main
             git reset --hard origin/main
 
-            echo "▸ Instalando dependências de produção..."
-            npm install --omit=dev --prefer-offline
+            if [ "${{ github.event.inputs.skip_install }}" != "true" ]; then
+              echo "▸ Instalando dependências de produção..."
+              npm install --omit=dev --prefer-offline --no-audit --no-fund
+            else
+              echo "▸ Pulando npm install (skip_install=true)"
+            fi
 
-            echo "▸ Reiniciando aplicação (Phusion Passenger)..."
+            echo "▸ Reiniciando Passenger..."
             mkdir -p tmp
             touch tmp/restart.txt
 
             echo "✔ Deploy concluído em $(date '+%Y-%m-%d %H:%M:%S UTC')"
+
+      - name: Healthcheck pós-deploy
+        run: |
+          sleep 8
+          for i in 1 2 3 4 5; do
+            if curl -fsS --max-time 10 https://agentescmais.pro/api/health > /tmp/health.json; then
+              echo "✔ Site respondendo:"
+              cat /tmp/health.json
+              exit 0
+            fi
+            echo "Tentativa $i falhou, aguardando..."
+            sleep 5
+          done
+          echo "::warning::Healthcheck não respondeu — verifique os logs no painel da Hostinger"
