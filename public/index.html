@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Assistente conversacional inteligente do Programa SC Mais Inovação - Governo de Santa Catarina" />
+  <meta name="theme-color" content="#0a3d2c" />
+  <title>SC Mais Inovação · Assistente Inteligente</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230a3d2c'/%3E%3Ctext x='50' y='62' font-size='44' font-weight='700' fill='%23c9f263' text-anchor='middle' font-family='sans-serif'%3ESC%3C/text%3E%3C/svg%3E" />
+</head>
+<body>
+  <!-- Header institucional -->
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-mark">
+        <span class="brand-mark-sc">SC</span>
+        <span class="brand-mark-plus">+</span>
+      </div>
+      <div class="brand-text">
+        <h1>SC Mais Inovação</h1>
+        <p>Assistente Inteligente · Governo de Santa Catarina</p>
+      </div>
+    </div>
+
+    <div class="status-pill" id="statusPill" title="Status da conexão">
+      <span class="status-dot"></span>
+      <span id="statusText">conectando…</span>
+    </div>
+  </header>
+
+  <!-- Painel de conversa -->
+  <main class="chat-panel">
+    <div class="chat-scroll" id="chatScroll" role="log" aria-live="polite" aria-label="Conversa">
+      <!-- Estado inicial -->
+      <div class="welcome" id="welcome">
+        <div class="welcome-icon">
+          <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 18h6"/>
+            <path d="M10 22h4"/>
+            <path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14"/>
+          </svg>
+        </div>
+        <h2>Olá! Como posso ajudar?</h2>
+        <p>Sou o assistente do programa <strong>SC Mais Inovação</strong>. Conheço todos os 21 hubs regionais, os agentes de inovação, as iniciativas, números e parceiros. Pode perguntar à vontade.</p>
+
+        <div class="suggestions">
+          <button class="suggestion" data-prompt="O que é o programa SC Mais Inovação?">
+            <span>O que é o programa</span>
+            <small>visão geral</small>
+          </button>
+          <button class="suggestion" data-prompt="Quem é o agente de inovação da minha região? Sou de Criciúma.">
+            <span>Quem é o agente da minha região?</span>
+            <small>encontre seu hub</small>
+          </button>
+          <button class="suggestion" data-prompt="Quais foram os principais resultados do programa em 2025?">
+            <span>Resultados de 2025</span>
+            <small>números oficiais</small>
+          </button>
+          <button class="suggestion" data-prompt="Como funcionam as iniciativas Marco Legal e DemandaSC?">
+            <span>Marco Legal e DemandaSC</span>
+            <small>iniciativas-chave</small>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Indicador de digitação -->
+    <div class="typing-indicator" id="typingIndicator" hidden>
+      <div class="typing-dots"><span></span><span></span><span></span></div>
+      <span class="typing-text">o assistente está pensando…</span>
+    </div>
+
+    <!-- Composer -->
+    <form class="composer" id="composer" autocomplete="off">
+      <textarea
+        id="messageInput"
+        placeholder="Pergunte sobre o programa, agentes, hubs, resultados…"
+        rows="1"
+        maxlength="4000"
+        aria-label="Sua mensagem"
+        required
+      ></textarea>
+      <button type="submit" id="sendBtn" aria-label="Enviar mensagem">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13"/>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+        </svg>
+      </button>
+    </form>
+
+    <p class="composer-hint">
+      Powered by <a href="https://www.anthropic.com/claude" target="_blank" rel="noopener">Claude</a> · Validação de dados via <a href="https://www.firecrawl.dev/" target="_blank" rel="noopener">Firecrawl</a> · Fonte: <a href="https://www.scmaisinovacao.scti.sc.gov.br/" target="_blank" rel="noopener">scmaisinovacao.scti.sc.gov.br</a>
+    </p>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
