@@ -1,0 +1,45 @@
+name: Deploy → agentescmais.pro
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Deploy para Hostinger
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script_stop: true
+          script: |
+            set -e
+
+            APP_DIR="$HOME/domains/agentescmais.pro/public_html"
+
+            echo "▸ Entrando no diretório da aplicação..."
+            cd "$APP_DIR"
+
+            echo "▸ Puxando últimas alterações do GitHub..."
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "▸ Instalando dependências de produção..."
+            npm install --omit=dev --prefer-offline
+
+            echo "▸ Reiniciando aplicação (Phusion Passenger)..."
+            mkdir -p tmp
+            touch tmp/restart.txt
+
+            echo "✔ Deploy concluído em $(date '+%Y-%m-%d %H:%M:%S UTC')"
