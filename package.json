@@ -1,12 +1,12 @@
 {
   "name": "sc-mais-inovacao-agent",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Agente conversacional inteligente sobre o programa SC Mais Inovação - Governo de Santa Catarina",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "refresh": "node src/refresh-knowledge.js"
+    "smoke": "node -e \"require('./src/audit.js'); require('./src/firecrawl.js'); require('./src/knowledge.js'); console.log('OK')\""
   },
   "engines": {
     "node": ">=18.0.0"
@@ -23,8 +23,9 @@
   "author": "SC Mais Inovação",
   "license": "MIT",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.32.1",
+    "@anthropic-ai/sdk": "^0.65.0",
     "@mendable/firecrawl-js": "^1.15.0",
+    "compression": "^1.7.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "express-rate-limit": "^7.5.0"

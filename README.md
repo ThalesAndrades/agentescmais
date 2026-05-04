@@ -14,11 +14,15 @@ Construído com:
 
 - Painel de conversa único, focado e responsivo (desktop e mobile)
 - Conhecimento profundo, pré-carregado, sobre todo o programa
+- **Prompt caching automático** no Claude — reduz custo das chamadas repetidas em ~90% no system prompt grande
 - Validação em tempo real via Firecrawl quando a pergunta envolve dados dinâmicos (notícias, eventos, fomentos, etc.)
-- Histórico de conversa preservado durante a sessão
-- Rate limiting embutido (20 mensagens por minuto por IP)
+- Histórico de conversa preservado durante a sessão (com botão "Limpar conversa")
+- Rate limiting embutido (20 mensagens por minuto por IP, configurável via `CHAT_RATE_LIMIT`)
 - Healthcheck e cache pré-aquecido no boot
 - Markdown leve renderizado nas respostas (negrito, listas, links, e-mails clicáveis)
+- Cabeçalhos de segurança (CSP, X-Frame-Options, HSTS), compressão gzip e shutdown gracioso
+- Auditoria estruturada em JSON Lines (LGPD-friendly: IPs hasheados com salt)
+- Deploy automático na Hostinger via GitHub Actions com healthcheck pós-deploy
 
 ---
 
@@ -219,10 +223,13 @@ A Hostinger expõe a aplicação Node.js no domínio que você configurou. Ative
 
 | Método | Rota | Descrição |
 |---|---|---|
-| `GET`  | `/`                    | Painel de conversa (HTML) |
-| `POST` | `/api/chat`            | Envia mensagem; recebe resposta do agente |
-| `GET`  | `/api/health`          | Status do servidor (modelo, cache, uptime) |
-| `POST` | `/api/refresh-cache`   | Limpa e re-aquece o cache do Firecrawl (protegido por `ADMIN_TOKEN` se configurado) |
+| `GET`  | `/`                          | Painel de conversa (HTML) |
+| `POST` | `/api/chat`                  | Envia mensagem; recebe resposta do agente |
+| `GET`  | `/api/health`                | Status do servidor (modelo, cache, uptime) |
+| `POST` | `/api/refresh-cache`         | Limpa e re-aquece o cache do Firecrawl (**requer `ADMIN_TOKEN`**) |
+| `GET`  | `/api/audit/stats`           | Métricas agregadas (**requer `ADMIN_TOKEN`**) |
+| `GET`  | `/api/audit/logs`            | Lista arquivos de log (**requer `ADMIN_TOKEN`**) |
+| `GET`  | `/api/audit/logs/:file`      | Conteúdo de um arquivo de log (**requer `ADMIN_TOKEN`**) |
 
 ### Exemplo de requisição
 

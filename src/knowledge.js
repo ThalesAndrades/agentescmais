@@ -276,12 +276,11 @@ const KNOWLEDGE_BASE = {
 };
 
 /**
- * Gera o contexto formatado para o system prompt do Claude
+ * Bloco estático da base de conhecimento — pode ser pré-cacheado pelo Claude.
  */
-function buildContextString(liveData = null) {
+function buildStaticContextString() {
   const kb = KNOWLEDGE_BASE;
-
-  let context = `
+  return `
 # CONHECIMENTO OFICIAL — PROGRAMA SC MAIS INOVAÇÃO
 
 ## SOBRE O PROGRAMA
@@ -355,9 +354,21 @@ ${kb.noticiasDestaque.map(n => `- **${n.data}** (${n.local}) — ${n.titulo}\n  
 ## LINKS OFICIAIS DO SITE
 ${Object.entries(kb.paginasOficiais).map(([k, v]) => `- ${k}: ${v}`).join("\n")}
 `;
+}
 
-  if (liveData && liveData.markdown) {
-    context += `
+/**
+ * Gera o contexto formatado para o system prompt do Claude.
+ * Quando `onlyLive=true`, retorna apenas o bloco com dados ao vivo (volátil)
+ * — útil para separar do bloco estático pré-cacheado.
+ */
+function buildContextString(liveData = null, onlyLive = false) {
+  const staticPart = onlyLive ? "" : buildStaticContextString();
+
+  if (!liveData || !liveData.markdown) {
+    return staticPart;
+  }
+
+  const liveBlock = `
 
 ---
 
@@ -367,12 +378,12 @@ URL consultada: ${liveData.url}
 
 ${liveData.markdown.substring(0, 8000)}
 `;
-  }
 
-  return context;
+  return onlyLive ? liveBlock.trimStart() : staticPart + liveBlock;
 }
 
 module.exports = {
   KNOWLEDGE_BASE,
-  buildContextString
+  buildContextString,
+  buildStaticContextString
 };

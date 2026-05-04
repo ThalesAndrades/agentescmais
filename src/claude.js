@@ -1,16 +1,19 @@
 /**
  * Integração com a API do Claude (Anthropic)
  *
- * Usa o SDK oficial @anthropic-ai/sdk e o modelo Claude Sonnet 4.6
- * (claude-sonnet-4-6) — equilíbrio entre qualidade e custo para
- * conversação contextualizada.
+ * - SDK oficial @anthropic-ai/sdk
+ * - Modelo padrão: claude-sonnet-4-6 (equilíbrio qualidade/custo para chat)
+ * - Prompt caching no system prompt (reduz custo significativamente — o prompt
+ *   estático é grande devido à base de conhecimento)
+ * - Retries automáticos em rate-limit/5xx (SDK)
  */
 
 const Anthropic = require("@anthropic-ai/sdk").default;
-const { buildContextString } = require("./knowledge");
+const { buildContextString, buildStaticContextString } = require("./knowledge");
 
 const MODEL = process.env.CLAUDE_MODEL || "claude-sonnet-4-6";
-const MAX_TOKENS = 1024;
+const MAX_TOKENS = parseInt(process.env.CLAUDE_MAX_TOKENS, 10) || 2048;
+const REQUEST_TIMEOUT_MS = parseInt(process.env.CLAUDE_TIMEOUT_MS, 10) || 60000;
 
 let anthropicClient = null;
 
@@ -22,7 +25,11 @@ function getClient() {
     throw new Error("ANTHROPIC_API_KEY não configurada — defina a variável no .env");
   }
 
-  anthropicClient = new Anthropic({ apiKey });
+  anthropicClient = new Anthropic({
+    apiKey,
+    maxRetries: 3,
+    timeout: REQUEST_TIMEOUT_MS
+  });
   return anthropicClient;
 }
 
@@ -62,20 +69,34 @@ Lembre-se: você fala em nome de um programa do Governo. Não dê opiniões pess
 `;
 
 /**
- * Envia uma mensagem para o Claude com contexto enriquecido e histórico de conversa.
+ * Envia uma mensagem para o Claude.
+ * Estrutura do system prompt para maximizar cache hit:
+ *   [bloco 1] SYSTEM_PROMPT_BASE + base de conhecimento estática (cacheado)
+ *   [bloco 2] dados ao vivo do Firecrawl (volátil, não cacheado)
  *
- * @param {Array<{role: 'user'|'assistant', content: string}>} history - Histórico de mensagens
- * @param {string} userMessage - Última mensagem do usuário
- * @param {object|null} liveData - Dados ao vivo do Firecrawl (opcional)
- * @returns {Promise<string>} Resposta do agente
+ * @param {Array<{role: 'user'|'assistant', content: string}>} history
+ * @param {string} userMessage
+ * @param {object|null} liveData
+ * @returns {Promise<{text: string, usage: object, model: string}>}
  */
 async function chat(history, userMessage, liveData = null) {
   const client = getClient();
 
-  const knowledgeContext = buildContextString(liveData);
-  const systemPrompt = `${SYSTEM_PROMPT_BASE}\n\n${knowledgeContext}`;
+  const staticContext = buildStaticContextString();
+  const liveContext = liveData ? buildContextString(liveData, /* onlyLive */ true) : "";
 
-  // Monta as mensagens (apenas user/assistant — system vai separado)
+  const systemBlocks = [
+    {
+      type: "text",
+      text: `${SYSTEM_PROMPT_BASE}\n\n${staticContext}`,
+      cache_control: { type: "ephemeral" }
+    }
+  ];
+
+  if (liveContext) {
+    systemBlocks.push({ type: "text", text: liveContext });
+  }
+
   const messages = [
     ...history.map(m => ({ role: m.role, content: m.content })),
     { role: "user", content: userMessage }
@@ -84,11 +105,10 @@ async function chat(history, userMessage, liveData = null) {
   const response = await client.messages.create({
     model: MODEL,
     max_tokens: MAX_TOKENS,
-    system: systemPrompt,
+    system: systemBlocks,
     messages
   });
 
-  // Extrai texto da resposta
   const textBlocks = response.content.filter(b => b.type === "text");
   const text = textBlocks.map(b => b.text).join("\n").trim();
 

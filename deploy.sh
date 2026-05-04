@@ -1,22 +1,36 @@
 #!/usr/bin/env bash
 # ============================================================
-#  deploy.sh — executado pelo GitHub Actions no servidor
-#  Pode também ser rodado manualmente via SSH:
-#    ssh usuario@host 'bash ~/domains/agentescmais.pro/public_html/deploy.sh'
+#  deploy.sh — script de deploy manual no servidor Hostinger
+#
+#  Uso (no terminal SSH da Hostinger):
+#    bash ~/domains/agentescmais.pro/public_html/deploy.sh
+#
+#  O fluxo automático via GitHub Actions está em
+#  .github/workflows/deploy.yml e executa estes mesmos passos.
 # ============================================================
-set -e
+set -euo pipefail
 
-APP_DIR="$HOME/domains/agentescmais.pro/public_html"
+DOMAIN="${DOMAIN:-agentescmais.pro}"
+APP_DIR="${APP_DIR:-$HOME/domains/$DOMAIN/public_html}"
+BRANCH="${BRANCH:-main}"
 
-echo "▸ Entrando em $APP_DIR"
+echo "▸ Diretório da aplicação: $APP_DIR"
+echo "▸ Branch: $BRANCH"
+
+mkdir -p "$APP_DIR"
 cd "$APP_DIR"
 
-echo "▸ Sincronizando com origin/main..."
-git fetch origin main
-git reset --hard origin/main
+if [ ! -d ".git" ]; then
+  echo "✗ $APP_DIR não é um repositório git. Rode setup-hostinger.sh primeiro."
+  exit 1
+fi
+
+echo "▸ Sincronizando com origin/$BRANCH..."
+git fetch origin "$BRANCH"
+git reset --hard "origin/$BRANCH"
 
 echo "▸ Instalando dependências..."
-npm install --omit=dev --prefer-offline
+npm install --omit=dev --prefer-offline --no-audit --no-fund
 
 echo "▸ Reiniciando Passenger..."
 mkdir -p tmp

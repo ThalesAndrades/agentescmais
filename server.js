@@ -6,13 +6,15 @@
  *   GET  /                  → Painel de conversa (frontend estático)
  *   POST /api/chat          → Recebe mensagem do usuário, devolve resposta do agente
  *   GET  /api/health        → Healthcheck (status, modelo, cache)
- *   POST /api/refresh-cache → Limpa o cache do Firecrawl (pode ser protegido)
+ *   POST /api/refresh-cache → Re-aquece o cache do Firecrawl (protegido por ADMIN_TOKEN)
+ *   GET  /api/audit/*       → Métricas e logs (protegido por ADMIN_TOKEN)
  */
 
 require("dotenv").config();
 
 const express = require("express");
 const path = require("path");
+const compression = require("compression");
 const rateLimit = require("express-rate-limit");
 
 const { chat } = require("./src/claude");
@@ -21,21 +23,57 @@ const audit = require("./src/audit");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const NODE_ENV = process.env.NODE_ENV || "development";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Middleware
 // ────────────────────────────────────────────────────────────────────────────
 
-app.use(express.json({ limit: "1mb" }));
-app.use(express.static(path.join(__dirname, "public")));
-
 // Trust proxy (Hostinger / NGINX em frente)
 app.set("trust proxy", 1);
+app.disable("x-powered-by");
+
+app.use(compression());
+app.use(express.json({ limit: "256kb" }));
+
+// Cabeçalhos de segurança básicos (sem helmet para manter dependências enxutas).
+// CSP permite o próprio domínio + Google Fonts (usado no front).
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
+  res.setHeader(
+    "Content-Security-Policy",
+    [
+      "default-src 'self'",
+      "script-src 'self'",
+      "style-src 'self' https://fonts.googleapis.com 'unsafe-inline'",
+      "font-src 'self' https://fonts.gstatic.com data:",
+      "img-src 'self' data:",
+      "connect-src 'self'",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'"
+    ].join("; ")
+  );
+  if (req.secure || req.headers["x-forwarded-proto"] === "https") {
+    res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  }
+  next();
+});
+
+app.use(
+  express.static(path.join(__dirname, "public"), {
+    maxAge: NODE_ENV === "production" ? "1h" : 0,
+    etag: true
+  })
+);
 
 // Rate limit no /api/chat — evita abuso da API do Claude
 const chatLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minuto
-  max: 20,             // 20 mensagens por minuto por IP
+  windowMs: 60 * 1000,
+  max: parseInt(process.env.CHAT_RATE_LIMIT, 10) || 20,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -44,7 +82,7 @@ const chatLimiter = rateLimit({
 });
 
 // ────────────────────────────────────────────────────────────────────────────
-// Rotas
+// Rotas públicas
 // ────────────────────────────────────────────────────────────────────────────
 
 app.get("/api/health", (req, res) => {
@@ -53,15 +91,16 @@ app.get("/api/health", (req, res) => {
     timestamp: new Date().toISOString(),
     model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
     firecrawl: firecrawl.getCacheStats(),
-    uptime: process.uptime(),
-    chats: audit.getStats().totalChats
+    uptime: Math.round(process.uptime()),
+    chats: audit.getStats().totalChats,
+    env: NODE_ENV
   });
 });
 
 app.post("/api/chat", chatLimiter, async (req, res) => {
   const startedAt = Date.now();
   const ip = req.ip;
-  const sessionId = req.headers["x-session-id"] || null;
+  const sessionId = sanitizeSessionId(req.headers["x-session-id"]);
   const { message, history } = req.body || {};
 
   try {
@@ -73,18 +112,13 @@ app.post("/api/chat", chatLimiter, async (req, res) => {
       return res.status(400).json({ error: "Mensagem muito longa (limite 4000 caracteres)." });
     }
 
-    // Sanitiza histórico (mantém só os últimos 20 turnos para controlar contexto)
     const sanitizedHistory = (Array.isArray(history) ? history : [])
       .slice(-20)
       .filter(m => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
       .map(m => ({ role: m.role, content: m.content.substring(0, 4000) }));
 
-    // Busca dados ao vivo no site (opcional, com cache)
     const liveData = await firecrawl.fetchRelevantContext(message);
-
-    // Conversa com o Claude
     const response = await chat(sanitizedHistory, message.trim(), liveData);
-
     const latencyMs = Date.now() - startedAt;
 
     audit.logChat({
@@ -111,18 +145,21 @@ app.post("/api/chat", chatLimiter, async (req, res) => {
     console.error("Erro no /api/chat:", err);
     audit.logError({ ip, sessionId, userMessage: message, error: err });
 
-    // Mensagem amigável sem expor stack trace
     const isApiKeyError = err.message && err.message.includes("API_KEY");
-    res.status(500).json({
-      error: isApiKeyError
-        ? "Configuração do servidor incompleta. Avise o administrador."
-        : "Tive um problema ao processar sua mensagem. Tente novamente em instantes."
-    });
+    const isOverloaded = err.status === 529 || err.status === 503;
+    const isRateLimited = err.status === 429;
+
+    let userMsg = "Tive um problema ao processar sua mensagem. Tente novamente em instantes.";
+    if (isApiKeyError) userMsg = "Configuração do servidor incompleta. Avise o administrador.";
+    else if (isOverloaded) userMsg = "Estou recebendo muitas mensagens agora. Tente novamente em alguns segundos.";
+    else if (isRateLimited) userMsg = "Limite temporário atingido. Aguarde alguns instantes e tente novamente.";
+
+    res.status(isApiKeyError ? 500 : isRateLimited ? 429 : 503).json({ error: userMsg });
   }
 });
 
 // ────────────────────────────────────────────────────────────────────────────
-// Endpoints de auditoria (protegidos por ADMIN_TOKEN)
+// Endpoints administrativos (sempre protegidos por ADMIN_TOKEN)
 // ────────────────────────────────────────────────────────────────────────────
 
 function requireAdmin(req, res, next) {
@@ -131,7 +168,7 @@ function requireAdmin(req, res, next) {
     return res.status(503).json({ error: "ADMIN_TOKEN não configurado no servidor." });
   }
   const provided = req.headers["x-admin-token"] || req.query.token;
-  if (provided !== token) {
+  if (!provided || !timingSafeEquals(provided, token)) {
     return res.status(401).json({ error: "Não autorizado." });
   }
   next();
@@ -155,59 +192,94 @@ app.get("/api/audit/logs/:file", requireAdmin, (req, res) => {
   }
 });
 
-app.post("/api/refresh-cache", (req, res) => {
-  // Proteção simples por token, se configurado
-  const token = process.env.ADMIN_TOKEN;
-  if (token) {
-    const provided = req.headers["x-admin-token"];
-    if (provided !== token) {
-      return res.status(401).json({ error: "Não autorizado." });
-    }
-  }
-
-  // Limpa o cache forçando re-fetch
-  const stats = firecrawl.getCacheStats();
-  // Como o cache é interno ao módulo, expomos via uma função de reset:
-  // (Para simplicidade, basta esperar TTL — mas aqui forçamos warmup)
-  firecrawl.warmCache().catch(err => console.error("Erro no warmCache:", err));
-
-  res.json({ ok: true, previousCacheSize: stats.size });
+app.post("/api/refresh-cache", requireAdmin, async (req, res) => {
+  const before = firecrawl.getCacheStats();
+  firecrawl.clearCache();
+  firecrawl.warmCache().catch(err => console.error("warmCache:", err.message));
+  res.json({ ok: true, previousCacheSize: before.size });
 });
 
-// Fallback — qualquer rota não-API serve o index.html (SPA-friendly)
+// ────────────────────────────────────────────────────────────────────────────
+// 404 explícito para /api/*; SPA fallback para o restante
+// ────────────────────────────────────────────────────────────────────────────
+
+app.use("/api", (req, res) => {
+  res.status(404).json({ error: "Endpoint não encontrado." });
+});
+
 app.get("*", (req, res) => {
-  if (req.path.startsWith("/api/")) {
-    return res.status(404).json({ error: "Endpoint não encontrado." });
-  }
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
+
+// ────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ────────────────────────────────────────────────────────────────────────────
+
+function sanitizeSessionId(value) {
+  if (!value || typeof value !== "string") return null;
+  // Mantém só caracteres seguros e limita o tamanho
+  const cleaned = value.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64);
+  return cleaned || null;
+}
+
+function timingSafeEquals(a, b) {
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return mismatch === 0;
+}
 
 // ────────────────────────────────────────────────────────────────────────────
 // Inicialização
 // ────────────────────────────────────────────────────────────────────────────
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
+  const model = process.env.CLAUDE_MODEL || "claude-sonnet-4-6";
+  const fcStatus = process.env.FIRECRAWL_API_KEY ? "ativo" : "inativo (chave ausente)";
   console.log("");
   console.log("╔════════════════════════════════════════════════════════════╗");
   console.log("║   SC Mais Inovação — Agente Conversacional                 ║");
   console.log("╠════════════════════════════════════════════════════════════╣");
-  console.log(`║   🌐 Servidor rodando em http://localhost:${PORT}              ║`);
-  console.log(`║   🤖 Modelo Claude: ${(process.env.CLAUDE_MODEL || "claude-sonnet-4-6").padEnd(38)} ║`);
-  console.log(`║   🔥 Firecrawl: ${(process.env.FIRECRAWL_API_KEY ? "ativo" : "inativo (chave ausente)").padEnd(43)} ║`);
+  console.log(`║   🌐 Porta: ${String(PORT).padEnd(46)} ║`);
+  console.log(`║   🤖 Modelo: ${model.padEnd(45)} ║`);
+  console.log(`║   🔥 Firecrawl: ${fcStatus.padEnd(42)} ║`);
+  console.log(`║   ⚙️  Ambiente: ${NODE_ENV.padEnd(43)} ║`);
   console.log("╚════════════════════════════════════════════════════════════╝");
   console.log("");
 
-  // Pré-aquece cache em background (não bloqueia o boot)
   firecrawl.warmCache().catch(err => {
     console.warn("Aviso: warmCache falhou —", err.message);
   });
 });
 
-// Tratamento de exceções não-capturadas
-process.on("unhandledRejection", (reason) => {
+// ────────────────────────────────────────────────────────────────────────────
+// Shutdown gracioso (importante para Passenger / Hostinger restart sem 502)
+// ────────────────────────────────────────────────────────────────────────────
+
+function shutdown(signal) {
+  console.log(`\n${signal} recebido — encerrando servidor...`);
+  server.close(err => {
+    if (err) {
+      console.error("Erro ao fechar servidor:", err);
+      process.exit(1);
+    }
+    console.log("Servidor encerrado.");
+    process.exit(0);
+  });
+  // Forçar saída se não fechar em 10s
+  setTimeout(() => {
+    console.error("Timeout no shutdown — forçando saída.");
+    process.exit(1);
+  }, 10000).unref();
+}
+
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
+
+process.on("unhandledRejection", reason => {
   console.error("Unhandled Rejection:", reason);
 });
-
-process.on("uncaughtException", (err) => {
+process.on("uncaughtException", err => {
   console.error("Uncaught Exception:", err);
 });
