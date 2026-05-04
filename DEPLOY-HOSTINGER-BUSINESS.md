@@ -160,22 +160,58 @@ Resposta esperada:
 
 ---
 
-## Etapa 9 — Configurar deploy contínuo (opcional, recomendado)
+## Etapa 9 — Deploy contínuo automático via GitHub Actions (recomendado)
 
-Para que cada `git push` na branch `main` atualize o site automaticamente:
+O repositório já contém o workflow `.github/workflows/deploy.yml`. A cada `git push` na branch `main`, o GitHub Actions:
+1. Faz SSH no servidor da Hostinger
+2. Atualiza o código (`git reset --hard origin/main`)
+3. Roda `npm install --omit=dev`
+4. Reinicia o Passenger (`touch tmp/restart.txt`)
 
-1. Volte em **Avançado → GIT**
-2. Na sua entrada de repositório, clique no ícone de cadeado/configurações
-3. **Copie a URL do webhook** (fica algo como `https://webhooks.hostinger.com/...`)
-4. No GitHub, vá em **Settings → Webhooks → Add webhook** do seu repositório
-5. Cole a URL no campo **Payload URL**
-6. **Content type:** `application/json`
-7. **Which events:** `Just the push event`
-8. Salve.
+### 9.1 — Gerar chave SSH exclusiva para o deploy
 
-Pronto — toda mudança no GitHub será refletida no site após ~30 segundos.
+No seu computador local (ou no terminal SSH da Hostinger):
 
-> Após cada push, lembre-se de ir no painel Node.js e clicar em **Restart** para recarregar o processo (ou configure um `git hook` post-receive para fazer isso automaticamente — opcional).
+```bash
+ssh-keygen -t ed25519 -C "github-actions-deploy" -f ~/.ssh/agentescmais_deploy -N ""
+```
+
+Isso gera dois arquivos:
+- `~/.ssh/agentescmais_deploy` → chave **privada** (vai para o GitHub)
+- `~/.ssh/agentescmais_deploy.pub` → chave **pública** (vai para o servidor)
+
+### 9.2 — Autorizar a chave no servidor Hostinger
+
+Acesse o terminal SSH da Hostinger e adicione a chave pública:
+
+```bash
+echo "CONTEUDO_DA_CHAVE_PUBLICA" >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+```
+
+### 9.3 — Criar os Secrets no GitHub
+
+Acesse **Settings → Secrets and variables → Actions → New repository secret** e adicione:
+
+| Nome do Secret | Valor |
+|---|---|
+| `SSH_HOST` | Hostname SSH da Hostinger (ex: `srv123.hostinger.com`) |
+| `SSH_USER` | Usuário SSH (ex: `u123456789`) |
+| `SSH_PRIVATE_KEY` | Conteúdo completo de `~/.ssh/agentescmais_deploy` |
+| `SSH_PORT` | Porta SSH da Hostinger — geralmente `65002` |
+
+> O hostname e usuário SSH ficam em **hPanel → Hospedagem → SSH Access**.
+
+### 9.4 — Verificar o pipeline
+
+1. Faça qualquer commit e push na branch `main`
+2. No GitHub, vá em **Actions** e acompanhe o job "Deploy → agentescmais.pro"
+3. Em ~30 segundos o site em [https://agentescmais.pro](https://agentescmais.pro) estará atualizado
+
+**Deploy manual via SSH** (emergência ou primeiro deploy):
+```bash
+ssh -p 65002 usuario@host 'bash ~/domains/agentescmais.pro/public_html/deploy.sh'
+```
 
 ---
 
