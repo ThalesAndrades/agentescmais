@@ -1,0 +1,32 @@
+{
+  "name": "sc-mais-inovacao-agent",
+  "version": "1.0.0",
+  "description": "Agente conversacional inteligente sobre o programa SC Mais Inovação - Governo de Santa Catarina",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "refresh": "node src/refresh-knowledge.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "sc-mais-inovacao",
+    "santa-catarina",
+    "inovacao",
+    "claude",
+    "firecrawl",
+    "chatbot",
+    "agente-conversacional"
+  ],
+  "author": "SC Mais Inovação",
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "@mendable/firecrawl-js": "^1.15.0",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0"
+  }
+}
