@@ -17,6 +17,8 @@ const path = require("path");
 const compression = require("compression");
 const rateLimit = require("express-rate-limit");
 
+const { connectMongo, pingMongo, closeMongo, getMongoStatus } = require("./db");
+
 const { chat } = require("./src/gemini");
 const firecrawl = require("./src/firecrawl");
 const audit = require("./src/audit");
@@ -24,6 +26,7 @@ const audit = require("./src/audit");
 const app = express();
 const PORT = process.env.PORT || 3000;
 const NODE_ENV = process.env.NODE_ENV || "development";
+let server = null;
 
 // ────────────────────────────────────────────────────────────────────────────
 // Middleware
@@ -85,13 +88,15 @@ const chatLimiter = rateLimit({
 // Rotas públicas
 // ────────────────────────────────────────────────────────────────────────────
 
-app.get("/api/health", (req, res) => {
+app.get("/api/health", async (req, res) => {
+  const mongo = await pingMongo();
   res.json({
     status: "ok",
     timestamp: new Date().toISOString(),
     provider: "gemini",
     model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
     firecrawl: firecrawl.getCacheStats(),
+    mongo,
     uptime: Math.round(process.uptime()),
     chats: audit.getStats().totalChats,
     env: NODE_ENV
@@ -236,44 +241,91 @@ function timingSafeEquals(a, b) {
 // Inicialização
 // ────────────────────────────────────────────────────────────────────────────
 
-const server = app.listen(PORT, () => {
-  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
-  const fcStatus = process.env.FIRECRAWL_API_KEY ? "ativo" : "inativo (chave ausente)";
-  console.log("");
-  console.log("╔════════════════════════════════════════════════════════════╗");
-  console.log("║   SC Mais Inovação — Agente Conversacional                 ║");
-  console.log("╠════════════════════════════════════════════════════════════╣");
-  console.log(`║   🌐 Porta: ${String(PORT).padEnd(46)} ║`);
-  console.log(`║   🤖 Modelo: ${model.padEnd(45)} ║`);
-  console.log(`║   🔥 Firecrawl: ${fcStatus.padEnd(42)} ║`);
-  console.log(`║   ⚙️  Ambiente: ${NODE_ENV.padEnd(43)} ║`);
-  console.log("╚════════════════════════════════════════════════════════════╝");
-  console.log("");
+async function start() {
+  // Conecta no Mongo antes de abrir a porta (inicialização segura)
+  try {
+    const mongo = await connectMongo();
+    if (mongo.enabled) {
+      console.log(`MongoDB: conectado (db=${mongo.dbName})`);
+    } else {
+      console.log("MongoDB: desativado (MONGODB_URI ausente)");
+    }
+  } catch (err) {
+    console.error("MongoDB: falha ao conectar —", err.message);
+    if (String(process.env.MONGODB_REQUIRED || "").toLowerCase() === "true") {
+      console.error("MONGODB_REQUIRED=true — encerrando o processo.");
+      process.exit(1);
+    }
+  }
 
-  firecrawl.warmCache().catch(err => {
-    console.warn("Aviso: warmCache falhou —", err.message);
+  server = app.listen(PORT, () => {
+    const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+    const fcStatus = process.env.FIRECRAWL_API_KEY ? "ativo" : "inativo (chave ausente)";
+    const mongoStatus = getMongoStatus();
+    const mongoLabel = mongoStatus.enabled
+      ? mongoStatus.connected
+        ? `ativo (${mongoStatus.dbName || "db"})`
+        : "degradado (sem conexão)"
+      : "inativo (URI ausente)";
+
+    console.log("");
+    console.log("╔════════════════════════════════════════════════════════════╗");
+    console.log("║   SC Mais Inovação — Agente Conversacional                 ║");
+    console.log("╠════════════════════════════════════════════════════════════╣");
+    console.log(`║   🌐 Porta: ${String(PORT).padEnd(46)} ║`);
+    console.log(`║   🤖 Modelo: ${model.padEnd(45)} ║`);
+    console.log(`║   🔥 Firecrawl: ${fcStatus.padEnd(42)} ║`);
+    console.log(`║   🗄️  MongoDB: ${mongoLabel.padEnd(43)} ║`);
+    console.log(`║   ⚙️  Ambiente: ${NODE_ENV.padEnd(43)} ║`);
+    console.log("╚════════════════════════════════════════════════════════════╝");
+    console.log("");
+
+    firecrawl.warmCache().catch(err => {
+      console.warn("Aviso: warmCache falhou —", err.message);
+    });
   });
+}
+
+start().catch(err => {
+  console.error("Falha ao iniciar o servidor:", err);
+  process.exit(1);
 });
 
 // ────────────────────────────────────────────────────────────────────────────
 // Shutdown gracioso (importante para Passenger / Hostinger restart sem 502)
 // ────────────────────────────────────────────────────────────────────────────
 
-function shutdown(signal) {
-  console.log(`\n${signal} recebido — encerrando servidor...`);
-  server.close(err => {
-    if (err) {
-      console.error("Erro ao fechar servidor:", err);
-      process.exit(1);
-    }
-    console.log("Servidor encerrado.");
-    process.exit(0);
+function closeHttpServer() {
+  return new Promise((resolve, reject) => {
+    if (!server) return resolve();
+    server.close(err => (err ? reject(err) : resolve()));
   });
-  // Forçar saída se não fechar em 10s
-  setTimeout(() => {
+}
+
+async function shutdown(signal) {
+  console.log(`\n${signal} recebido — encerrando servidor...`);
+  const forceExit = setTimeout(() => {
     console.error("Timeout no shutdown — forçando saída.");
     process.exit(1);
   }, 10000).unref();
+
+  try {
+    await closeHttpServer();
+  } catch (err) {
+    clearTimeout(forceExit);
+    console.error("Erro ao fechar servidor:", err);
+    process.exit(1);
+  }
+
+  try {
+    await closeMongo();
+  } catch (err) {
+    console.error("Erro ao fechar MongoDB:", err.message);
+  }
+
+  clearTimeout(forceExit);
+  console.log("Servidor encerrado.");
+  process.exit(0);
 }
 
 process.on("SIGTERM", () => shutdown("SIGTERM"));
