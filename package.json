@@ -15,7 +15,8 @@
     "sc-mais-inovacao",
     "santa-catarina",
     "inovacao",
-    "claude",
+    "gemini",
+    "google-ai-studio",
     "firecrawl",
     "chatbot",
     "agente-conversacional"
@@ -23,7 +24,6 @@
   "author": "SC Mais Inovação",
   "license": "MIT",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.65.0",
     "@mendable/firecrawl-js": "^1.15.0",
     "compression": "^1.7.5",
     "dotenv": "^16.4.7",

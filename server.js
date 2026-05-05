@@ -5,7 +5,7 @@
  * Endpoints:
  *   GET  /                  → Painel de conversa (frontend estático)
  *   POST /api/chat          → Recebe mensagem do usuário, devolve resposta do agente
- *   GET  /api/health        → Healthcheck (status, modelo, cache)
+ *   GET  /api/health        → Healthcheck (status, provider, modelo, cache)
  *   POST /api/refresh-cache → Re-aquece o cache do Firecrawl (protegido por ADMIN_TOKEN)
  *   GET  /api/audit/*       → Métricas e logs (protegido por ADMIN_TOKEN)
  */
@@ -17,7 +17,7 @@ const path = require("path");
 const compression = require("compression");
 const rateLimit = require("express-rate-limit");
 
-const { chat } = require("./src/claude");
+const { chat } = require("./src/gemini");
 const firecrawl = require("./src/firecrawl");
 const audit = require("./src/audit");
 
@@ -70,7 +70,7 @@ app.use(
   })
 );
 
-// Rate limit no /api/chat — evita abuso da API do Claude
+// Rate limit no /api/chat — evita abuso da API do Gemini
 const chatLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: parseInt(process.env.CHAT_RATE_LIMIT, 10) || 20,
@@ -89,7 +89,8 @@ app.get("/api/health", (req, res) => {
   res.json({
     status: "ok",
     timestamp: new Date().toISOString(),
-    model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
+    provider: "gemini",
+    model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
     firecrawl: firecrawl.getCacheStats(),
     uptime: Math.round(process.uptime()),
     chats: audit.getStats().totalChats,
@@ -145,7 +146,8 @@ app.post("/api/chat", chatLimiter, async (req, res) => {
     console.error("Erro no /api/chat:", err);
     audit.logError({ ip, sessionId, userMessage: message, error: err });
 
-    const isApiKeyError = err.message && err.message.includes("API_KEY");
+    const msg = typeof err?.message === "string" ? err.message : "";
+    const isApiKeyError = msg.includes("API_KEY") || msg.includes("GEMINI_API_KEY");
     const isOverloaded = err.status === 529 || err.status === 503;
     const isRateLimited = err.status === 429;
 
@@ -235,7 +237,7 @@ function timingSafeEquals(a, b) {
 // ────────────────────────────────────────────────────────────────────────────
 
 const server = app.listen(PORT, () => {
-  const model = process.env.CLAUDE_MODEL || "claude-sonnet-4-6";
+  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
   const fcStatus = process.env.FIRECRAWL_API_KEY ? "ativo" : "inativo (chave ausente)";
   console.log("");
   console.log("╔════════════════════════════════════════════════════════════╗");

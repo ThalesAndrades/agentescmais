@@ -77,9 +77,9 @@ A Hostinger fará o `git clone` no diretório indicado. Aguarde a mensagem de su
 
 | Nome | Valor |
 |---|---|
-| `ANTHROPIC_API_KEY` | `sk-ant-...` (sua chave do Claude) |
+| `GEMINI_API_KEY` | `AIza...` (sua chave do Gemini) |
 | `FIRECRAWL_API_KEY` | `fc-...` (sua chave do Firecrawl) |
-| `CLAUDE_MODEL` | `claude-sonnet-4-6` |
+| `GEMINI_MODEL` | `gemini-2.5-flash` |
 | `NODE_ENV` | `production` |
 
 > ⚠️ **Não defina** a variável `PORT`. A Hostinger injeta a porta correta automaticamente via Phusion Passenger.
@@ -114,7 +114,7 @@ Verifique os logs clicando em **View Logs**. Se tudo deu certo, você verá:
 ║   SC Mais Inovação — Agente Conversacional                 ║
 ╠════════════════════════════════════════════════════════════╣
 ║   🌐 Servidor rodando em http://localhost:XXXXX            ║
-║   🤖 Modelo Claude: claude-sonnet-4-6                      ║
+║   🤖 Modelo Gemini: gemini-2.5-flash                       ║
 ║   🔥 Firecrawl: ativo                                      ║
 ╚════════════════════════════════════════════════════════════╝
 🔥 Pré-aquecendo cache do Firecrawl...
@@ -152,7 +152,8 @@ Resposta esperada:
 {
   "status": "ok",
   "timestamp": "2026-...",
-  "model": "claude-sonnet-4-6",
+  "provider": "gemini",
+  "model": "gemini-2.5-flash",
   "firecrawl": { "size": 3, "enabled": true },
   "uptime": 42
 }
@@ -221,11 +222,11 @@ ssh -p 65002 usuario@host 'bash ~/domains/agentescmais.pro/public_html/deploy.sh
 |---|---|---|
 | Erro **503 Service Unavailable** | App não iniciou | Veja **View Logs** — geralmente é variável de ambiente faltando |
 | Erro **502 Bad Gateway** | App crashou após iniciar | Logs vão mostrar o erro JS — corrija e Restart |
-| **"ANTHROPIC_API_KEY não configurada"** | Variável não foi salva | Re-adicione no painel Node.js e Restart |
+| **"GEMINI_API_KEY não configurada"** | Variável não foi salva | Re-adicione no painel Node.js e Restart |
 | **Site mostra 404 / "Index of /"** | Diretório raiz errado | Confira que o `Diretório raiz` aponta exatamente para onde o `git clone` baixou |
 | **Mudanças no GitHub não aparecem** | Webhook não configurado, ou app não foi reiniciada | Configure webhook (Etapa 9) e/ou clique em **Restart** |
 | **"Muitas mensagens em pouco tempo"** no chat | Rate limit interno (20 msgs/min/IP) | É proteção — espere 1 minuto |
-| **Frontend carrega, mas chat não responde** | API do Claude/Firecrawl falhando | Veja logs e verifique se as chaves estão válidas em [console.anthropic.com](https://console.anthropic.com) e [firecrawl.dev](https://www.firecrawl.dev/) |
+| **Frontend carrega, mas chat não responde** | API do Gemini/Firecrawl falhando | Veja logs e verifique se as chaves estão válidas em [Google AI Studio](https://aistudio.google.com/) e [firecrawl.dev](https://www.firecrawl.dev/) |
 
 ---
 
@@ -233,7 +234,7 @@ ssh -p 65002 usuario@host 'bash ~/domains/agentescmais.pro/public_html/deploy.sh
 
 - **CPU:** processo Node.js compartilha CPU do servidor — para tráfego alto (>1.000 msgs/dia) considere migrar para **Cloud Hosting** ou VPS
 - **Memória:** ~768MB disponíveis — suficiente para essa aplicação
-- **Timeout de execução:** ~30s para requisições — o Claude responde em 3-15s, então fica tranquilo
+- **Timeout de execução:** ~30s para requisições — o Gemini costuma responder em poucos segundos, então fica dentro da janela
 - **Workers:** 1 worker Node.js — se precisar de mais throughput, é hora de upgrade
 - **Logs:** rotacionados automaticamente — para retenção longa, use um serviço externo (ex: Papertrail, Logtail)
 
@@ -241,7 +242,7 @@ ssh -p 65002 usuario@host 'bash ~/domains/agentescmais.pro/public_html/deploy.sh
 
 ## Próximos passos
 
-- [ ] Monitorar uso de tokens no [console.anthropic.com](https://console.anthropic.com/dashboard)
+- [ ] Monitorar uso e cota no [Google AI Studio](https://aistudio.google.com/)
 - [ ] Monitorar uso de scrapes no [firecrawl.dev](https://www.firecrawl.dev/app/usage)
 - [ ] Configurar Google Analytics ou Plausible no `index.html` se quiser métricas de uso
 - [ ] Customizar a base de conhecimento em `src/knowledge.js` quando o programa publicar atualizações importantes

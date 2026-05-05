@@ -3,7 +3,7 @@
 Agente conversacional oficial do programa **[SC Mais Inovação](https://www.scmaisinovacao.scti.sc.gov.br/)**, do Governo do Estado de Santa Catarina. Responde perguntas e gera insights sobre todo o conteúdo do site oficial — equipe, hubs regionais, agentes de inovação, iniciativas, resultados e parceiros.
 
 Construído com:
-- 🤖 **[Claude API](https://www.anthropic.com/api)** (Anthropic) para a inteligência conversacional
+- 🤖 **[Gemini API](https://ai.google.dev/gemini-api/docs)** (Google AI Studio / free tier) para a inteligência conversacional
 - 🔥 **[Firecrawl](https://www.firecrawl.dev/)** para validação e captura de dados em tempo real do site
 - ⚡ **Node.js + Express** no backend
 - 🎨 **HTML/CSS/JS puro** no frontend (sem frameworks pesados)
@@ -37,7 +37,7 @@ sc-mais-inovacao-agent/
 ├── README.md
 │
 ├── src/
-│   ├── claude.js             # Integração com a API do Claude
+│   ├── gemini.js             # Integração com a API Gemini (free tier)
 │   ├── firecrawl.js          # Integração com Firecrawl (cache, fetch)
 │   └── knowledge.js          # Base de conhecimento estática do programa
 │
@@ -53,7 +53,7 @@ sc-mais-inovacao-agent/
 
 ### 1. Pré-requisitos
 - **Node.js 18+** ([baixar](https://nodejs.org/))
-- Chave de API da **Anthropic** ([criar](https://console.anthropic.com/settings/keys))
+- Chave de API do **Gemini** ([criar no Google AI Studio](https://aistudio.google.com/app/apikey))
 - Chave de API do **Firecrawl** ([criar](https://www.firecrawl.dev/app/api-keys))
 
 ### 2. Instalação
@@ -75,7 +75,8 @@ cp .env.example .env
 Edite `.env`:
 
 ```env
-ANTHROPIC_API_KEY=sk-ant-sua-chave-aqui
+GEMINI_API_KEY=AIza-sua-chave-aqui
+GEMINI_MODEL=gemini-2.5-flash
 FIRECRAWL_API_KEY=fc-sua-chave-aqui
 PORT=3000
 ```
@@ -186,9 +187,9 @@ No painel **Node.js** da Hostinger, vá em **Variáveis de Ambiente** e adicione
 
 | Variável | Valor |
 |---|---|
-| `ANTHROPIC_API_KEY` | sua chave do Claude |
+| `GEMINI_API_KEY` | sua chave do Gemini via Google AI Studio |
 | `FIRECRAWL_API_KEY` | sua chave do Firecrawl |
-| `CLAUDE_MODEL` | `claude-sonnet-4-6` (opcional) |
+| `GEMINI_MODEL` | `gemini-2.5-flash` (opcional) |
 | `ADMIN_TOKEN` | um token aleatório (opcional) |
 
 > **NÃO** suba o arquivo `.env` para o Git. Ele já está no `.gitignore`.
@@ -208,7 +209,7 @@ Se tudo estiver certo, você verá:
 ║   SC Mais Inovação — Agente Conversacional                 ║
 ╠════════════════════════════════════════════════════════════╣
 ║   🌐 Servidor rodando em http://localhost:3000             ║
-║   🤖 Modelo Claude: claude-sonnet-4-6                      ║
+║   🤖 Modelo Gemini: gemini-2.5-flash                       ║
 ║   🔥 Firecrawl: ativo                                       ║
 ╚════════════════════════════════════════════════════════════╝
 ```
@@ -248,7 +249,7 @@ Resposta:
 {
   "reply": "O agente de inovação da AMREC (microrregião de Criciúma) é a **Laís Machado da Silva**...",
   "meta": {
-    "model": "claude-sonnet-4-6-20250101",
+    "model": "gemini-2.5-flash",
     "usedLiveData": false,
     "liveDataUrl": null
   }
@@ -263,8 +264,8 @@ O Firecrawl **não** é chamado em toda mensagem — isso seria caro e desnecess
 
 1. A mensagem do usuário é analisada por palavras-chave (notícia, evento, fomento, marco legal, etc.)
 2. Se houver match com uma página dinâmica do site, a página é buscada via Firecrawl com cache de 30 minutos
-3. O conteúdo bruto é injetado no contexto do Claude como "DADOS ATUALIZADOS EM TEMPO REAL"
-4. O Claude valida e cita esses dados, garantindo respostas alinhadas ao site oficial
+3. O conteúdo bruto é injetado no contexto do Gemini como "DADOS ATUALIZADOS EM TEMPO REAL"
+4. O Gemini valida e cita esses dados, garantindo respostas alinhadas ao site oficial
 
 Páginas pré-aquecidas no boot:
 - `/` (home)
@@ -285,13 +286,13 @@ Páginas pré-aquecidas no boot:
 
 ## 📝 Customização
 
-### Mudar o modelo do Claude
+### Mudar o modelo do Gemini
 
-Edite a variável `CLAUDE_MODEL` no `.env`:
+Edite a variável `GEMINI_MODEL` no `.env`:
 
-- `claude-opus-4-7` — modelo mais avançado (mais caro)
-- `claude-sonnet-4-6` — equilíbrio recomendado (padrão)
-- `claude-haiku-4-5-20251001` — mais rápido e barato
+- `gemini-2.5-flash` — equilíbrio recomendado para qualidade e free tier
+- `gemini-2.0-flash` — alternativa leve e geralmente compatível com free tier
+- Outros modelos Gemini podem exigir disponibilidade regional ou limites diferentes
 
 ### Atualizar a base de conhecimento
 
@@ -299,7 +300,7 @@ A base estática vive em `src/knowledge.js`. Sempre que o programa publicar gran
 
 ### Ajustar o tom do agente
 
-O `SYSTEM_PROMPT_BASE` em `src/claude.js` define identidade, tom e regras de conduta. Edite com cuidado.
+O `SYSTEM_PROMPT_BASE` em `src/gemini.js` define identidade, tom e regras de conduta. Edite com cuidado.
 
 ### Personalizar identidade visual
 
@@ -317,7 +318,7 @@ O `SYSTEM_PROMPT_BASE` em `src/claude.js` define identidade, tom e regras de con
 | Problema | Solução |
 |---|---|
 | Status fica "offline" | Verifique se o servidor iniciou e se a porta está exposta |
-| Erro "ANTHROPIC_API_KEY não configurada" | Confirme `.env` ou variáveis de ambiente da Hostinger |
+| Erro "GEMINI_API_KEY não configurada" | Confirme `.env` ou variáveis de ambiente da Hostinger |
 | Firecrawl mostra "inativo" | A chave do Firecrawl não foi configurada — agente roda só com base estática |
 | Respostas genéricas | Verifique se a base de conhecimento (`knowledge.js`) está sendo carregada corretamente |
 | Mensagem "Muitas mensagens em pouco tempo" | Rate limit ativado — espere 1 minuto |

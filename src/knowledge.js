@@ -276,7 +276,7 @@ const KNOWLEDGE_BASE = {
 };
 
 /**
- * Bloco estático da base de conhecimento — pode ser pré-cacheado pelo Claude.
+ * Bloco estático da base de conhecimento usado no system prompt do agente.
  */
 function buildStaticContextString() {
   const kb = KNOWLEDGE_BASE;
