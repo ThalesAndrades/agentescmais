@@ -34,6 +34,8 @@
   let history = loadHistory();
   let isSending = false;
   let typingInterval = null;
+  let activeTypewriter = null;
+  let scrollPending = false;
 
   init();
 
@@ -46,6 +48,9 @@
     setInterval(checkHealth, 60000);
     window.addEventListener("online", () => setStatus("online", "online"));
     window.addEventListener("offline", () => setStatus("offline", "offline"));
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") cancelActiveTypewriter({ flush: true });
+    });
     setTimeout(() => $input.focus(), 180);
   }
 
@@ -98,6 +103,7 @@
     isSending = true;
     setSendingState(true);
     syncWelcomeVisibility(true);
+    cancelActiveTypewriter({ flush: true });
 
     renderMessage("user", text);
     history.push({ role: "user", content: text });
@@ -112,8 +118,13 @@
 
     try {
       const reply = await sendToAPI(text);
-      showTyping(false);
-      renderMessage("assistant", reply.text, { meta: reply.meta });
+      updateTypingPhase({ title: "Digitando", text: "Gerando a resposta na tela…" });
+      renderMessage("assistant", reply.text, {
+        meta: reply.meta,
+        onRendered: () => {
+          showTyping(false);
+        }
+      });
       history.push({ role: "assistant", content: reply.text });
       saveHistory();
       setStatus("online", "online");
@@ -157,7 +168,7 @@
   }
 
   function renderMessage(role, content, options = {}) {
-    const { animate = true, meta = null } = options;
+    const { animate = true, meta = null, onRendered = null } = options;
     const $message = document.createElement("article");
     const $avatar = document.createElement("div");
     const $bubble = document.createElement("div");
@@ -176,17 +187,40 @@
     $meta.textContent = `${role === "user" ? "Pergunta" : "Assistente"} · ${formatTime(new Date())}`;
 
     if (role === "assistant") {
-      $bubble.innerHTML = `<div class="message-meta">${$meta.textContent}</div>${renderMarkdown(content)}`;
+      $bubble.innerHTML = `<div class="message-meta">${$meta.textContent}</div><div class="message-content" role="article"></div>`;
+      const $content = $bubble.querySelector(".message-content");
+      const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-      if (meta && meta.usedLiveData) {
-        const $source = document.createElement("div");
-        const urlLabel = meta.liveDataUrl
-          ? meta.liveDataUrl.replace("https://www.scmaisinovacao.scti.sc.gov.br", "") || "site oficial"
-          : "site oficial";
+      const renderFinal = () => {
+        $content.innerHTML = renderMarkdown(content);
+        if (meta && meta.usedLiveData) {
+          $bubble.appendChild(buildLiveSource(meta));
+        }
+        onRendered?.();
+      };
 
-        $source.className = "live-source";
-        $source.textContent = `dados validados em tempo real · ${urlLabel}`;
-        $bubble.appendChild($source);
+      if (!animate || reduceMotion) {
+        renderFinal();
+      } else {
+        $message.classList.add("is-typing");
+        $bubble.dataset.typing = "1";
+
+        const initialDelayMs = 160 + Math.floor(Math.random() * 260);
+        activeTypewriter = startTypewriter($content, content, {
+          initialDelayMs,
+          onDone: () => {
+            $message.classList.remove("is-typing");
+            delete $bubble.dataset.typing;
+            renderFinal();
+          }
+        });
+
+        const skip = (event) => {
+          if (event?.target && event.target.closest && event.target.closest("a")) return;
+          cancelActiveTypewriter({ flush: true });
+        };
+
+        $bubble.addEventListener("click", skip, { passive: true, once: true });
       }
     } else {
       $bubble.innerHTML = `<div class="message-meta">${$meta.textContent}</div><p>${escapeHTML(content)}</p>`;
@@ -196,6 +230,112 @@
     $message.appendChild($bubble);
     $scroll.appendChild($message);
     scrollToBottom();
+  }
+
+  function buildLiveSource(meta) {
+    const $source = document.createElement("div");
+    const urlLabel = meta.liveDataUrl
+      ? meta.liveDataUrl.replace("https://www.scmaisinovacao.scti.sc.gov.br", "") || "site oficial"
+      : "site oficial";
+
+    $source.className = "live-source";
+    $source.textContent = `dados validados em tempo real · ${urlLabel}`;
+    return $source;
+  }
+
+  function startTypewriter($content, text, options = {}) {
+    const { onDone = null, initialDelayMs = 0 } = options;
+    const node = document.createTextNode("");
+    $content.replaceChildren(node);
+
+    const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduceMotion) {
+      node.data = text;
+      onDone?.();
+      return {
+        cancelled: true,
+        flush: false,
+        done: true,
+        i: text.length,
+        carry: 0,
+        lastT: performance.now(),
+        rafId: 0,
+        finish: () => {}
+      };
+    }
+
+    const state = {
+      cancelled: false,
+      flush: false,
+      done: false,
+      i: 0,
+      carry: 0,
+      lastT: performance.now(),
+      rafId: 0,
+      finish: null,
+      initialDelayMs: 0
+    };
+
+    const baseCps = 58;
+    const maxChunk = 24;
+
+    const step = (now) => {
+      if (state.cancelled) {
+        if (state.flush) state.finish?.();
+        return;
+      }
+
+      const dt = Math.min(Math.max(now - state.lastT, 0), 50);
+      state.lastT = now;
+
+      if (state.initialDelayMs > 0) {
+        state.initialDelayMs = Math.max(0, state.initialDelayMs - dt);
+        state.rafId = requestAnimationFrame(step);
+        return;
+      }
+
+      const jitter = Math.sin(now / 180) * 6 + Math.cos(now / 260) * 4;
+      const cps = Math.max(28, baseCps + jitter);
+      state.carry += (dt / 1000) * cps;
+
+      let n = Math.min(Math.floor(state.carry), maxChunk);
+      if (n <= 0) {
+        state.rafId = requestAnimationFrame(step);
+        return;
+      }
+
+      state.carry -= n;
+      const next = Math.min(state.i + n, text.length);
+      node.data += text.slice(state.i, next);
+      state.i = next;
+      scrollToBottom();
+
+      if (state.i >= text.length) {
+        state.finish?.();
+        return;
+      }
+
+      state.rafId = requestAnimationFrame(step);
+    };
+
+    state.finish = () => {
+      if (state.done) return;
+      state.done = true;
+      onDone?.();
+    };
+
+    state.initialDelayMs = Math.max(0, parseInt(initialDelayMs, 10) || 0);
+    state.rafId = requestAnimationFrame(step);
+    return state;
+  }
+
+  function cancelActiveTypewriter({ flush } = {}) {
+    if (!activeTypewriter) return;
+    activeTypewriter.flush = !!flush;
+    activeTypewriter.cancelled = true;
+    if (activeTypewriter.rafId) cancelAnimationFrame(activeTypewriter.rafId);
+    if (activeTypewriter.flush) activeTypewriter.finish?.();
+    activeTypewriter = null;
   }
 
   function renderMarkdown(text) {
@@ -313,7 +453,10 @@
   }
 
   function scrollToBottom() {
+    if (scrollPending) return;
+    scrollPending = true;
     requestAnimationFrame(() => {
+      scrollPending = false;
       $scroll.scrollTop = $scroll.scrollHeight;
     });
   }
@@ -382,6 +525,7 @@
     history = [];
     saveHistory();
     clearTypingCycle();
+    cancelActiveTypewriter({ flush: false });
     $typing.hidden = true;
     $scroll.innerHTML = "";
     syncWelcomeVisibility(false);
