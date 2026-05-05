@@ -30,16 +30,19 @@
   const $inputMeta = document.getElementById("inputMeta");
   const $composerState = document.getElementById("composerState");
   const $clearChatBtn = document.getElementById("clearChatBtn");
+  const $brandVariantBtn = document.getElementById("brandVariantBtn");
 
   let history = loadHistory();
   let isSending = false;
   let typingInterval = null;
   let activeTypewriter = null;
   let scrollPending = false;
+  let brandVariant = "official";
 
   init();
 
   function init() {
+    initBrandVariant();
     bindEvents();
     restoreConversation();
     updateInputMeta();
@@ -79,6 +82,49 @@
     });
 
     $clearChatBtn.addEventListener("click", clearConversation);
+    $brandVariantBtn?.addEventListener("click", toggleBrandVariant);
+  }
+
+  function initBrandVariant() {
+    const params = new URLSearchParams(window.location.search);
+    const fromQuery = params.get("brand");
+    const stored = (() => {
+      try {
+        return localStorage.getItem("sc_brand_variant");
+      } catch {
+        return null;
+      }
+    })();
+
+    const next = normalizeBrandVariant(fromQuery || stored || "official");
+    setBrandVariant(next, { persist: false });
+  }
+
+  function normalizeBrandVariant(value) {
+    const v = String(value || "").toLowerCase().trim();
+    if (v === "mono" || v === "pb" || v === "p&b" || v === "pretoebranco" || v === "preto-e-branco") return "mono";
+    return "official";
+  }
+
+  function setBrandVariant(next, { persist } = {}) {
+    brandVariant = normalizeBrandVariant(next);
+    document.documentElement.dataset.brand = brandVariant === "mono" ? "mono" : "official";
+
+    if ($brandVariantBtn) {
+      $brandVariantBtn.textContent = `Identidade: ${brandVariant === "mono" ? "p&b" : "oficial"}`;
+    }
+
+    if (persist) {
+      try {
+        localStorage.setItem("sc_brand_variant", brandVariant);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  function toggleBrandVariant() {
+    setBrandVariant(brandVariant === "mono" ? "official" : "mono", { persist: true });
   }
 
   function restoreConversation() {

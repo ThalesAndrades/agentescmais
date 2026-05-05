@@ -7,7 +7,10 @@
   --sc-green-deep: #0a3d2c;
   --sc-green: #14583f;
   --sc-green-light: #1d6d4f;
-  --sc-lime: #c9f263;
+  --sc-brand-green: #a6c63a;
+  --sc-brand-red: #e4232a;
+  --sc-brand-ink: #0b0c0e;
+  --sc-lime: var(--sc-brand-green);
   --sc-lime-soft: #eef8bf;
   --sc-paper: #f7f5ee;
   --sc-paper-strong: #fffdf9;
@@ -27,6 +30,23 @@
   --shadow-sm: 0 8px 20px rgba(10, 31, 23, 0.05);
   --shadow-md: 0 20px 50px -22px rgba(10, 31, 23, 0.2);
   --shadow-lg: 0 28px 80px -28px rgba(10, 31, 23, 0.32);
+  --header-accent: rgba(166, 198, 58, 0.88);
+  --logo-sc: #000;
+  --logo-text: #000;
+  --logo-mark-bg: var(--sc-brand-red);
+  --logo-mark-green: var(--sc-brand-green);
+  --logo-mark-divider: rgba(255, 255, 255, 0.92);
+}
+
+[data-brand="mono"] {
+  --logo-sc: #000;
+  --logo-text: #000;
+  --logo-mark-bg: #000;
+  --logo-mark-green: #000;
+  --logo-mark-divider: rgba(255, 255, 255, 0.92);
+  --sc-lime: #111;
+  --sc-glow: rgba(0, 0, 0, 0.14);
+  --header-accent: rgba(0, 0, 0, 0.48);
 }
 
 * {
@@ -98,7 +118,7 @@ a {
   color: #f9fbf6;
   background: rgba(10, 61, 44, 0.92);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 6px 0 0 rgba(201, 242, 99, 0.88), var(--shadow-sm);
+  box-shadow: 0 6px 0 0 var(--header-accent), var(--shadow-sm);
   backdrop-filter: blur(14px);
 }
 
@@ -109,42 +129,55 @@ a {
   min-width: 0;
 }
 
-.brand-mark {
-  position: relative;
-  display: grid;
-  place-items: center;
+.brand-logo {
   flex-shrink: 0;
-  width: 52px;
+  width: 260px;
   height: 52px;
-  border-radius: 16px;
-  color: var(--sc-green-deep);
-  background:
-    linear-gradient(180deg, #d7f88e 0%, #c9f263 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4), 0 14px 32px rgba(0, 0, 0, 0.16);
-  font-family: var(--font-display);
-  font-weight: 700;
-}
-
-.brand-mark-sc {
-  font-size: 20px;
-  line-height: 1;
-}
-
-.brand-mark-plus {
-  position: absolute;
-  top: -5px;
-  right: -5px;
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 999px;
-  background: #fff;
-  color: var(--sc-green-deep);
-  border: 2px solid var(--sc-green-deep);
-  font-size: 14px;
-  font-weight: 800;
-  line-height: 1;
+}
+
+.brand-logo svg {
+  display: block;
+}
+
+.brand-logo .logo-sc {
+  font-family: var(--font-body);
+  font-weight: 900;
+  font-size: 96px;
+  letter-spacing: -0.06em;
+  fill: var(--logo-sc);
+}
+
+.brand-logo .logo-mais {
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 44px;
+  letter-spacing: 0.22em;
+  fill: var(--logo-text);
+}
+
+.brand-logo .logo-inovacao {
+  font-family: var(--font-body);
+  font-weight: 900;
+  font-size: 56px;
+  letter-spacing: 0.06em;
+  fill: var(--logo-text);
+}
+
+.brand-logo .logo-mark-bg {
+  fill: var(--logo-mark-bg);
+}
+
+.brand-logo .logo-mark-green {
+  fill: var(--logo-mark-green);
+}
+
+.brand-logo .logo-mark-divider {
+  stroke: var(--logo-mark-divider);
+  stroke-width: 3;
+  stroke-linecap: round;
+  opacity: 0.96;
 }
 
 .brand-text {
@@ -899,6 +932,11 @@ a {
 
   .brand-text h1 {
     font-size: 18px;
+  }
+
+  .brand-logo {
+    width: 240px;
+    height: 48px;
   }
 
   .brand-text p {
